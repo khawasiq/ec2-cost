@@ -136,8 +136,25 @@ st.subheader("Feature Engineering (Memory & vCPUs as numbers)")
 st.dataframe(reg_data[['Name', 'Instance Memory', 'vCPUs', 'On Demand']].head())
 
 # Step 4: Handle Missing Data
-data_cleaned = reg_data.dropna(subset=['On Demand', 'Instance Memory', 'vCPUs'])
-st.write(f"Rows used for regression after dropping missing values: {len(data_cleaned)}")
+data_no_missing = reg_data.dropna(subset=['On Demand', 'Instance Memory', 'vCPUs'])
+st.write(f"Rows after dropping missing values: {len(data_no_missing)}")
+
+# Remove On-Demand cost outliers (same IQR method as Part 1).
+# A few huge instances (e.g. U7IN-32TB at $407/hr) pull the regression line
+# so much that the intercept becomes negative and small instances get
+# negative predicted costs. Removing them gives a realistic model.
+Q1 = data_no_missing['On Demand'].quantile(0.25)
+Q3 = data_no_missing['On Demand'].quantile(0.75)
+IQR = Q3 - Q1
+data_cleaned = data_no_missing[
+    (data_no_missing['On Demand'] >= Q1 - 1.5 * IQR) &
+    (data_no_missing['On Demand'] <= Q3 + 1.5 * IQR)
+]
+st.write(f"Outliers removed (IQR method): {len(data_no_missing) - len(data_cleaned)}  |  "
+         f"Rows used for regression: {len(data_cleaned)}")
+st.info("Extreme high-cost instances (outliers) are removed before training. "
+        "With them included, the intercept becomes negative and small instances "
+        "get negative predicted costs, which is not realistic.")
 
 # Step 5: Split the Data
 X = data_cleaned[['Instance Memory', 'vCPUs']]
