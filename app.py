@@ -5,6 +5,7 @@ import streamlit as st
 
 st.set_page_config(page_title="EC2 Cost Analysis", layout="wide")
 st.title("Analyzing Amazon EC2 Instance Costs")
+st.caption("Part 1: Cost analysis & outliers  |  Part 2: Predicting On-Demand cost with Linear Regression")
 
 # Load data
 file_path = 'ec2dataset.csv'
@@ -23,6 +24,13 @@ for column in cost_columns:
         data[column].str.replace('[$, hourly]', '', regex=True),
         errors='coerce'
     )
+
+st.header("Part 1: Cost Analysis")
+st.subheader("Dataset Preview")
+st.write(f"Rows: {data.shape[0]}, Columns: {data.shape[1]}")
+st.dataframe(data.head())
+st.subheader("Missing Values After Cleaning")
+st.dataframe(data[cost_columns].isnull().sum().rename("Missing values"))
 
 # Summary statistics
 st.header("1. Summary Statistics of Cost Columns")
@@ -105,3 +113,75 @@ comparison = pd.concat([
 ])
 comparison_sorted = comparison.dropna().sort_values('On Demand')
 st.dataframe(comparison_sorted.head(10))
+
+
+# ==========================================================
+# Part 2: Predicting EC2 Instance Costs Using Regression
+# ==========================================================
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+
+st.header("Part 2: Predicting EC2 Instance Costs Using Regression Analysis")
+
+# Step 3: Feature Engineering
+reg_data = data.copy()
+reg_data['Instance Memory'] = pd.to_numeric(
+    reg_data['Instance Memory'].str.replace(' GiB', '').str.replace(',', ''),
+    errors='coerce'
+)
+reg_data['vCPUs'] = pd.to_numeric(reg_data['vCPUs'].str.extract(r'(\d+)', expand=False))
+
+st.subheader("Feature Engineering (Memory & vCPUs as numbers)")
+st.dataframe(reg_data[['Name', 'Instance Memory', 'vCPUs', 'On Demand']].head())
+
+# Step 4: Handle Missing Data
+data_cleaned = reg_data.dropna(subset=['On Demand', 'Instance Memory', 'vCPUs'])
+st.write(f"Rows used for regression after dropping missing values: {len(data_cleaned)}")
+
+# Step 5: Split the Data
+X = data_cleaned[['Instance Memory', 'vCPUs']]
+y = data_cleaned['On Demand']
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+st.write(f"Training samples: {len(X_train)}, Testing samples: {len(X_test)}")
+
+# Step 6: Train a Linear Regression Model
+model = LinearRegression()
+model.fit(X_train, y_train)
+
+st.subheader("Model Coefficients")
+c1, c2, c3 = st.columns(3)
+c1.metric("Intercept", f"{model.intercept_:.4f}")
+c2.metric("Memory coefficient (per GiB)", f"{model.coef_[0]:.4f}")
+c3.metric("vCPU coefficient (per vCPU)", f"{model.coef_[1]:.4f}")
+
+# Step 7: Evaluate the Model
+y_pred = model.predict(X_test)
+mae = mean_absolute_error(y_test, y_pred)
+mse = mean_squared_error(y_test, y_pred)
+rmse = mse ** 0.5
+
+st.subheader("Model Evaluation")
+m1, m2, m3 = st.columns(3)
+m1.metric("MAE", f"{mae:.4f}")
+m2.metric("MSE", f"{mse:.4f}")
+m3.metric("RMSE", f"{rmse:.4f}")
+
+# Step 8: Visualize the Results
+st.subheader("Actual vs Predicted On-Demand Costs")
+fig, ax = plt.subplots(figsize=(8, 6))
+ax.scatter(y_test, y_pred, alpha=0.7, color='b')
+ax.plot([min(y_test), max(y_test)], [min(y_test), max(y_test)], color='red', linestyle='--')
+ax.set_title('Actual vs Predicted On-Demand Costs')
+ax.set_xlabel('Actual On-Demand Cost')
+ax.set_ylabel('Predicted On-Demand Cost')
+st.pyplot(fig)
+
+# Step 9: Make Predictions
+st.subheader("Predict Cost for a New Instance")
+p1, p2 = st.columns(2)
+memory_in = p1.number_input("Instance Memory (GiB)", min_value=0.5, value=4.0, step=0.5)
+vcpu_in = p2.number_input("vCPUs", min_value=1, value=2, step=1)
+new_instance = pd.DataFrame([[memory_in, vcpu_in]], columns=['Instance Memory', 'vCPUs'])
+predicted_cost = model.predict(new_instance)
+st.success(f"Predicted On-Demand Cost for {memory_in} GiB, {vcpu_in} vCPUs: ${predicted_cost[0]:.4f} per hour")
