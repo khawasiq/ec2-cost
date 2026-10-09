@@ -1,7 +1,12 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+import streamlit as st
 
+st.set_page_config(page_title="EC2 Cost Analysis", layout="wide")
+st.title("Analyzing Amazon EC2 Instance Costs")
+
+# Load data
 file_path = 'ec2dataset.csv'
 data = pd.read_csv(file_path)
 cost_columns = [
@@ -18,32 +23,24 @@ for column in cost_columns:
         data[column].str.replace('[$, hourly]', '', regex=True),
         errors='coerce'
     )
-# Generate summary statistics for cost-related columns
+
+# Summary statistics
+st.header("1. Summary Statistics of Cost Columns")
 cost_summary = data[cost_columns].describe()
-print(cost_summary)
+st.dataframe(cost_summary)
 
 # Step 5: Visualize the Data
-# Use a boxplot to visualize the distribution of costs across different pricing options.
-
-
-
-# Set up the plotting style
+st.header("2. Cost Comparison (Boxplot)")
 sns.set_theme(style="whitegrid")
+fig, ax = plt.subplots(figsize=(12, 6))
+sns.boxplot(data=data[cost_columns], palette="Set2", ax=ax)
+ax.set_title('Cost Comparison of Amazon EC2 Instances (Hourly)', fontsize=16)
+ax.set_ylabel('Cost (USD)', fontsize=12)
+plt.setp(ax.get_xticklabels(), rotation=45, ha='right', fontsize=12)
+fig.tight_layout()
+st.pyplot(fig)
 
-# Create a boxplot to visualize the distribution of costs
-plt.figure(figsize=(12, 6))
-sns.boxplot(data=data[cost_columns], palette="Set2")
-
-# Set the plot labels and title
-plt.title('Cost Comparison of Amazon EC2 Instances (Hourly)', fontsize=16)
-plt.ylabel('Cost (USD)', fontsize=12)
-plt.xticks(rotation=45, ha='right', fontsize=12)
-
-# Display the plot
-plt.tight_layout()
-plt.show()
-#Detect potential outliers in the cost data using interquartile ranges (IQR).
-# Function to identify outliers using the IQR method
+# Detect potential outliers using IQR
 def detect_outliers(column):
     Q1 = data[column].quantile(0.25)
     Q3 = data[column].quantile(0.75)
@@ -52,79 +49,59 @@ def detect_outliers(column):
     upper_bound = Q3 + 1.5 * IQR
     return data[(data[column] < lower_bound) | (data[column] > upper_bound)]
 
-# Find outliers in the On-Demand cost column
+st.header("3. Outliers in On-Demand Cost (IQR Method)")
 outliers_on_demand = detect_outliers('On Demand')
-print(outliers_on_demand)
+st.write(f"Number of outliers: {len(outliers_on_demand)}")
+st.dataframe(outliers_on_demand)
 
 # Compare Reserved and On-Demand costs
+st.header("4. Top 10 Cost-Effective Instances (On-Demand vs Reserved)")
 cost_comparison = (
     data[['Name', 'On Demand', 'Linux Reserved cost']]
     .dropna()
     .sort_values('On Demand')
 )
+st.dataframe(cost_comparison.head(10))
 
-print(cost_comparison.head(10))  # Display the top 10 cost-effective instances
-# 1. Filter for specific instance families
-
+# Filter for specific instance families
 def filter_instance_family(family):
     return data[data['Name'].str.startswith(family)]
 
-
-# Filter for T2 and T3 instance families
 t2_instances = filter_instance_family('T2')
 t3_instances = filter_instance_family('T3')
 
+st.header("5. T2 vs T3 Instance Families")
+col1, col2 = st.columns(2)
+with col1:
+    st.subheader("T2 Instance Costs Summary")
+    st.dataframe(t2_instances[cost_columns].describe())
+with col2:
+    st.subheader("T3 Instance Costs Summary")
+    st.dataframe(t3_instances[cost_columns].describe())
 
-# Compare summary statistics for T2 and T3 instances
-t2_summary = t2_instances[cost_columns].describe()
-t3_summary = t3_instances[cost_columns].describe()
+# T2 boxplot
+fig, ax = plt.subplots(figsize=(12, 6))
+sns.boxplot(data=t2_instances[cost_columns], palette="Blues", showmeans=True, ax=ax)
+ax.set_title('Cost Distribution for T2 Instances', fontsize=16)
+ax.set_ylabel('Cost (USD)', fontsize=12)
+plt.setp(ax.get_xticklabels(), rotation=45, ha='right', fontsize=12)
+fig.tight_layout()
+st.pyplot(fig)
 
-print("T2 Instance Costs Summary:\n", t2_summary)
-print("\nT3 Instance Costs Summary:\n", t3_summary)
+# T3 boxplot
+fig, ax = plt.subplots(figsize=(12, 6))
+sns.boxplot(data=t3_instances[cost_columns], palette="Greens", showmeans=True, ax=ax)
+ax.set_title('Cost Distribution for T3 Instances', fontsize=16)
+ax.set_ylabel('Cost (USD)', fontsize=12)
+plt.setp(ax.get_xticklabels(), rotation=45, ha='right', fontsize=12)
+fig.tight_layout()
+st.pyplot(fig)
 
-
-# 2. Visualize the cost distribution of different instance families
-
-# T2 instances
-plt.figure(figsize=(12, 6))
-sns.boxplot(
-    data=t2_instances[cost_columns],
-    palette="Blues",
-    showmeans=True
-)
-
-plt.title('Cost Distribution for T2 Instances', fontsize=16)
-plt.ylabel('Cost (USD)', fontsize=12)
-plt.xticks(rotation=45, ha='right', fontsize=12)
-plt.show()
-
-
-# T3 instances
-plt.figure(figsize=(12, 6))
-sns.boxplot(
-    data=t3_instances[cost_columns],
-    palette="Greens",
-    showmeans=True
-)
-
-plt.title('Cost Distribution for T3 Instances', fontsize=16)
-plt.ylabel('Cost (USD)', fontsize=12)
-plt.xticks(rotation=45, ha='right', fontsize=12)
-plt.show()
-
-
-# 3. Compare On-Demand and Reserved costs for different instance families
-
+# Compare On-Demand and Reserved costs for T2 and T3
+st.header("6. T2 & T3: On-Demand vs Reserved (Top 10 Cheapest)")
 comparison = pd.concat([
     t2_instances[['Name', 'On Demand', 'Linux Reserved cost']],
     t3_instances[['Name', 'On Demand', 'Linux Reserved cost']]
 ])
-
-# Sort by On-Demand costs
-comparison_sorted = (
-    comparison
-    .dropna()
-    .sort_values('On Demand')
-)
-
-print(comparison_sorted.head(10))
+comparison_sorted = comparison.dropna().sort_values('On Demand')
+st.dataframe(comparison_sorted.head(10))
